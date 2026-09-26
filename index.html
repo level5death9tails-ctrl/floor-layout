@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1e2022">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>床レイアウト</title>
+<style>
+  :root {
+    --bar: #1e2022;
+    --bar-line: #34383b;
+    --text: #f1f1ef;
+    --sub: #a9adb0;
+    --accent: #f2c200;
+    --danger: #e0453a;
+    --floor-bg: #4a4d50;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: var(--bar); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+    overscroll-behavior: none;
+  }
+  #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+
+  /* 上部：モード表示と凡例 */
+  #top {
+    padding: calc(env(safe-area-inset-top) + 6px) 12px 6px;
+    background: var(--bar); border-bottom: 1px solid var(--bar-line);
+  }
+  #modeRow { display: flex; align-items: center; gap: 8px; min-height: 36px; }
+  #modeChip {
+    flex: none; padding: 5px 12px; border-radius: 999px;
+    background: var(--accent); color: #1a1a1a; font-weight: 700; font-size: 15px;
+  }
+  #modeHint { flex: 1; font-size: 13px; color: var(--sub); line-height: 1.3; }
+  #modeHint.alert { color: var(--accent); font-weight: 700; }
+  #cancelStart {
+    display: none; flex: none; min-width: 64px; min-height: 36px;
+    border: 1px solid var(--accent); border-radius: 8px;
+    background: transparent; color: var(--accent); font-size: 14px; font-weight: 700;
+  }
+  #legend {
+    display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center;
+    margin-top: 4px; font-size: 12px; color: var(--sub);
+  }
+  .lg-item { display: inline-flex; align-items: center; gap: 5px; }
+  .lg-swatch { width: 22px; height: 0; border-top: 4px solid var(--accent); border-radius: 2px; }
+
+  /* キャンバス */
+  #stage { position: relative; flex: 1; min-height: 0; background: var(--floor-bg); }
+  #cv { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+  #toast {
+    position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+    background: rgba(20,20,20,.88); color: #fff; padding: 8px 14px; border-radius: 8px;
+    font-size: 14px; pointer-events: none; opacity: 0; transition: opacity .2s; white-space: nowrap;
+  }
+  #toast.show { opacity: 1; }
+
+  /* 下部ツールバー */
+  #bar {
+    display: grid; grid-template-columns: repeat(6, 1fr);
+    background: var(--bar); border-top: 1px solid var(--bar-line);
+    padding: 4px 4px calc(env(safe-area-inset-bottom) + 4px);
+  }
+  .tb {
+    min-height: 56px; min-width: 44px; margin: 0 2px; padding: 4px 0 2px;
+    border: 0; border-radius: 10px; background: transparent; color: var(--text);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    font-size: 12px; font-family: inherit;
+  }
+  .tb svg { width: 26px; height: 26px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .tb:active { background: #2d3033; }
+  .tb.on { background: var(--accent); color: #1a1a1a; font-weight: 700; }
+  .tb:disabled { color: #5c6063; }
+
+  /* シート（メニュー・設定） */
+  .veil { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none; z-index: 10; }
+  .veil.show { display: block; }
+  .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 11;
+    background: #26292b; border-radius: 16px 16px 0 0;
+    padding: 16px 16px calc(env(safe-area-inset-bottom) + 16px);
+    display: none; max-height: 85dvh; overflow-y: auto;
+  }
+  .sheet.show { display: block; }
+  .sheet h2 { margin: 0 0 12px; font-size: 17px; }
+  .sbtn {
+    display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px;
+    margin-bottom: 8px; padding: 0 14px; border: 0; border-radius: 10px;
+    background: #34383b; color: var(--text); font-size: 16px; font-family: inherit; text-align: left;
+  }
+  .sbtn svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .sbtn.danger { color: #ff7a70; }
+  .sbtn.primary { background: var(--accent); color: #1a1a1a; font-weight: 700; justify-content: center; }
+  .sbtn.plain { background: transparent; border: 1px solid #4a4e51; justify-content: center; }
+  .field { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .field label { flex: 1; font-size: 15px; }
+  .field input {
+    width: 96px; min-height: 44px; padding: 0 10px; border-radius: 8px;
+    border: 1px solid #4a4e51; background: #1b1d1f; color: var(--text);
+    font-size: 16px; text-align: right; font-family: inherit;
+  }
+  .field .unit { width: 36px; font-size: 14px; color: var(--sub); }
+  .group { border-top: 1px solid #3a3e41; padding-top: 12px; margin-top: 6px; }
+  .note { font-size: 13px; color: var(--sub); margin: 0 0 10px; line-height: 1.5; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="top">
+    <div id="modeRow">
+      <span id="modeChip">線</span>
+      <span id="modeHint"></span>
+      <button id="cancelStart">解除</button>
+    </div>
+    <div id="legend"></div>
+  </div>
+
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="toast"></div>
+  </div>
+
+  <div id="bar">
+    <button class="tb" id="bLine" data-mode="line">
+      <svg viewBox="0 0 24 24"><path d="M4 20 L20 4"/><circle cx="4" cy="20" r="1.5"/></svg>線
+    </button>
+    <button class="tb" id="bStraight" data-mode="straight">
+      <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="12" r="2.5"/><path d="M7.5 12 H16.5"/></svg>直線
+    </button>
+    <button class="tb" id="bUndo">
+      <svg viewBox="0 0 24 24"><path d="M9 14 L4 9 L9 4"/><path d="M4 9 H14 a6 6 0 0 1 0 12 H10"/></svg>戻す
+    </button>
+    <button class="tb" id="bRedo">
+      <svg viewBox="0 0 24 24"><path d="M15 14 L20 9 L15 4"/><path d="M20 9 H10 a6 6 0 0 0 0 12 H14"/></svg>進む
+    </button>
+    <button class="tb" id="bFit">
+      <svg viewBox="0 0 24 24"><path d="M4 9 V4 H9"/><path d="M15 4 H20 V9"/><path d="M20 15 V20 H15"/><path d="M9 20 H4 V15"/></svg>全体
+    </button>
+    <button class="tb" id="bMenu">
+      <svg viewBox="0 0 24 24"><path d="M4 6 H20"/><path d="M4 12 H20"/><path d="M4 18 H20"/></svg>メニュー
+    </button>
+  </div>
+</div>
+
+<div class="veil" id="veil"></div>
+
+<div class="sheet" id="menuSheet">
+  <h2>メニュー</h2>
+  <button class="sbtn" id="mSettings">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9 H21 M3 15 H21 M9 3 V21 M15 3 V21"/></svg>マス目の設定
+  </button>
+  <button class="sbtn" id="mExport">
+    <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M21 16 L15 11 L5 19"/></svg>画像で保存（PNG）
+  </button>
+  <button class="sbtn danger" id="mClear">
+    <svg viewBox="0 0 24 24"><path d="M4 7 H20"/><path d="M9 7 V4 H15 V7"/><path d="M6 7 L7 20 H17 L18 7"/></svg>全消去
+  </button>
+  <button class="sbtn plain" data-close>閉じる</button>
+</div>
+
+<div class="sheet" id="setSheet">
+  <h2>マス目の設定</h2>
+  <div class="field"><label for="inCols">横のマス数</label><input id="inCols" type="number" inputmode="numeric" min="1" max="200"><span class="unit">マス</span></div>
+  <div class="field"><label for="inRows">縦のマス数</label><input id="inRows" type="number" inputmode="numeric" min="1" max="200"><span class="unit">マス</span></div>
+  <div class="field"><label for="inCell">1マスの大きさ</label><input id="inCell" type="number" inputmode="decimal" min="1" max="1000"><span class="unit">cm</span></div>
+  <div class="group">
+    <p class="note">部屋の外形サイズを入れて「マス数を計算」を押すと、上のマス数が自動で入ります（端数は切り上げ）。</p>
+    <div class="field"><label for="inRoomW">部屋の横幅</label><input id="inRoomW" type="number" inputmode="decimal" min="0.1" step="0.1"><span class="unit">m</span></div>
+    <div class="field"><label for="inRoomH">部屋の奥行き</label><input id="inRoomH" type="number" inputmode="decimal" min="0.1" step="0.1"><span class="unit">m</span></div>
+    <button class="sbtn plain" id="sCalc">マス数を計算</button>
+  </div>
+  <div class="row2" style="margin-top:8px">
+    <button class="sbtn plain" data-close>やめる</button>
+    <button class="sbtn primary" id="sApply">決定</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- 定数 ----------
+  const STORE_KEY = 'floorLayout.v1';
+  const HISTORY_MAX = 100;           // 元に戻す（30手以上）
+  const TAP_SLOP = 12;               // これ以上動いたらタップ扱いしない（px）
+  const TAPE = { yellow: '#f2c200' }; // フェーズ1は黄のみ
+  const COLORS = {
+    floor: '#8d9092',     // マス目の地（床）
+    outside: '#4a4d50',   // 部屋の外
+    grid: 'rgba(255,255,255,0.22)',
+    gridMajor: 'rgba(255,255,255,0.45)',
+    wall: '#2b2e30',
+    label: 'rgba(255,255,255,0.75)',
+  };
+
+  // ---------- 状態 ----------
+  let state = { cols: 20, rows: 30, cellCm: 50, lines: {} }; // lines: "h,x,y" / "v,x,y" -> {c:'yellow'}
+  const undoStack = [];
+  const redoStack = [];
+  const ui = { mode: 'line', start: null, flash: null };
+  const view = { s: 20, ox: 0, oy: 0, fitted: false };
+
+  // ---------- 保存 ----------
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      if (!raw) return;
+      const d = JSON.parse(raw);
+      if (d && d.cols > 0 && d.rows > 0 && d.cellCm > 0 && d.lines) state = d;
+    } catch (e) { /* 読めなければ初期値 */ }
+  }
+  function save() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+    catch (e) { toast('保存できませんでした'); }
+  }
+
+  // ---------- 履歴 ----------
+  function snapshot() { return JSON.stringify(state); }
+  function commit(before) {
+    undoStack.push(before);
+    if (undoStack.length > HISTORY_MAX) undoStack.shift();
+    redoStack.length = 0;
+    save(); refreshButtons(); requestDraw();
+  }
+  function undo() {
+    if (!undoStack.length) return;
+    redoStack.push(snapshot());
+    state = JSON.parse(undoStack.pop());
+    afterRestore();
+  }
+  function redo() {
+    if (!redoStack.length) return;
+    undoStack.push(snapshot());
+    state = JSON.parse(redoStack.pop());
+    afterRestore();
+  }
+  function afterRestore() {
+    if (ui.start && (ui.start.x > state.cols || ui.start.y > state.rows)) ui.start = null;
+    save(); refreshButtons(); updateTop(); requestDraw();
+  }
+
+  // ---------- 座標 ----------
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  let cssW = 0, cssH = 0, dpr = 1;
+
+  function toGrid(px, py) { return { x: (px - view.ox) / view.s, y: (py - view.oy) / view.s }; }
+
+  function fitView() {
+    const pad = 28;
+    const s = Math.min((cssW - pad * 2) / state.cols, (cssH - pad * 2) / state.rows);
+    view.s = Math.max(2, s);
+    view.ox = (cssW - state.cols * view.s) / 2;
+    view.oy = (cssH - state.rows * view.s) / 2;
+    view.fitted = true;
+    requestDraw();
+  }
+  function minScale() { return Math.min(cssW / state.cols, cssH / state.rows) * 0.4; }
+  const MAX_SCALE = 240;
+
+  // タップ位置から一番近い辺
+  function nearestEdge(px, py) {
+    const g = toGrid(px, py);
+    const { cols, rows } = state;
+    if (g.x < -0.6 || g.y < -0.6 || g.x > cols + 0.6 || g.y > rows + 0.6) return null;
+    const cx = Math.min(Math.max(g.x, 0), cols);
+    const cy = Math.min(Math.max(g.y, 0), rows);
+    // 横の辺（y=整数）
+    const hy = Math.round(cy);
+    const hx = Math.min(Math.floor(cx), cols - 1);
+    const dh = Math.abs(g.y - hy) + Math.max(0, hx - g.x, g.x - (hx + 1));
+    // 縦の辺（x=整数）
+    const vx = Math.round(cx);
+    const vy = Math.min(Math.floor(cy), rows - 1);
+    const dv = Math.abs(g.x - vx) + Math.max(0, vy - g.y, g.y - (vy + 1));
+    return dh <= dv ? `h,${hx},${hy}` : `v,${vx},${vy}`;
+  }
+  function nearestPoint(px, py) {
+    const g = toGrid(px, py);
+    if (g.x < -0.8 || g.y < -0.8 || g.x > state.cols + 0.8 || g.y > state.rows + 0.8) return null;
+    return {
+      x: Math.min(Math.max(Math.round(g.x), 0), state.cols),
+      y: Math.min(Math.max(Math.round(g.y), 0), state.rows),
+    };
+  }
+
+  // ---------- 操作 ----------
+  function tapLine(px, py) {
+    const key = nearestEdge(px, py);
+    if (!key) return;
+    const before = snapshot();
+    if (state.lines[key]) delete state.lines[key];
+    else state.lines[key] = { c: 'yellow' };
+    flashEdges([key]);
+    buzz();
+    commit(before);
+  }
+
+  function tapStraight(px, py) {
+    const p = nearestPoint(px, py);
+    if (!p) return;
+    if (!ui.start) { ui.start = p; buzz(); updateTop(); requestDraw(); return; }
+    const a = ui.start;
+    if (a.x === p.x && a.y === p.y) { ui.start = null; updateTop(); requestDraw(); return; }
+    // 縦か横に寄せる（ずれの大きい方向を採用）
+    const keys = [];
+    if (Math.abs(p.x - a.x) >= Math.abs(p.y - a.y)) {
+      const x0 = Math.min(a.x, p.x), x1 = Math.max(a.x, p.x);
+      for (let x = x0; x < x1; x++) keys.push(`h,${x},${a.y}`);
+      p.y = a.y;
+    } else {
+      const y0 = Math.min(a.y, p.y), y1 = Math.max(a.y, p.y);
+      for (let y = y0; y < y1; y++) keys.push(`v,${a.x},${y}`);
+      p.x = a.x;
+    }
+    const before = snapshot();
+    const allOn = keys.every(k => state.lines[k]);
+    for (const k of keys) {
+      if (allOn) delete state.lines[k];
+      else state.lines[k] = { c: 'yellow' };
+    }
+    if (allOn) toast('その区間の線を消しました');
+    ui.start = p; // 続けて引けるよう終点を次の始点にする
+    flashEdges(keys);
+    buzz();
+    commit(before);
+    updateTop();
+  }
+
+  function flashEdges(keys) {
+    ui.flash = { keys, until: performance.now() + 260 };
+    requestDraw();
+    setTimeout(requestDraw, 280);
+  }
+  function buzz() { try { navigator.vibrate && navigator.vibrate(8); } catch (e) {} }
+
+  function setMode(m) {
+    ui.mode = m;
+    ui.start = null;
+    updateTop(); refreshButtons(); requestDraw();
+  }
+
+  // ---------- 描画 ----------
+  let drawQueued = false;
+  function requestDraw() {
+    if (drawQueued) return;
+    drawQueued = true;
+    requestAnimationFrame(() => { drawQueued = false; draw(); });
+  }
+
+  function resize() {
+    const r = cv.getBoundingClientRect();
+    dpr = Math.min(window.devicePixelRatio || 1, 3);
+    cssW = r.width; cssH = r.height;
+    cv.width = Math.round(cssW * dpr);
+    cv.height = Math.round(cssH * dpr);
+    if (!view.fitted) fitView();
+    requestDraw();
+  }
+
+  function edgeCoords(key) {
+    const [t, xs, ys] = key.split(',');
+    const x = +xs, y = +ys;
+    return t === 'h' ? [x, y, x + 1, y] : [x, y, x, y + 1];
+  }
+
+  // 画面と画像書き出しで共通の描画
+  function drawScene(c, s, ox, oy, w, h, opts) {
+    const { cols, rows, cellCm } = state;
+    c.fillStyle = COLORS.outside;
+    c.fillRect(0, 0, w, h);
+
+    // 床
+    c.fillStyle = COLORS.floor;
+    c.fillRect(ox, oy, cols * s, rows * s);
+
+    // マス目
+    const perM = (100 % cellCm === 0) ? 100 / cellCm : 0; // 1mごとの太線
+    if (s >= 4) {
+      c.lineWidth = 1;
+      c.beginPath();
+      for (let x = 0; x <= cols; x++) {
+        if (perM && x % perM === 0) continue;
+        const X = Math.round(ox + x * s) + 0.5;
+        c.moveTo(X, oy); c.lineTo(X, oy + rows * s);
+      }
+      for (let y = 0; y <= rows; y++) {
+        if (perM && y % perM === 0) continue;
+        const Y = Math.round(oy + y * s) + 0.5;
+        c.moveTo(ox, Y); c.lineTo(ox + cols * s, Y);
+      }
+      c.strokeStyle = COLORS.grid;
+      c.stroke();
+    }
+    if (perM) {
+      c.lineWidth = 1;
+      c.beginPath();
+      for (let x = 0; x <= cols; x += perM) {
+        const X = Math.round(ox + x * s) + 0.5;
+        c.moveTo(X, oy); c.lineTo(X, oy + rows * s);
+      }
+      for (let y = 0; y <= rows; y += perM) {
+        const Y = Math.round(oy + y * s) + 0.5;
+        c.moveTo(ox, Y); c.lineTo(ox + cols * s, Y);
+      }
+      c.strokeStyle = COLORS.gridMajor;
+      c.stroke();
+    }
+
+    // 外周（壁）
+    c.lineWidth = Math.max(2, s * 0.08);
+    c.strokeStyle = COLORS.wall;
+    c.strokeRect(ox, oy, cols * s, rows * s);
+
+    // メートル目盛り
+    const stepM = perM ? Math.max(1, Math.ceil(30 / (perM * s))) : 0;
+    if (stepM) {
+      c.fillStyle = COLORS.label;
+      c.font = `${Math.round(opts.labelSize)}px sans-serif`;
+      c.textAlign = 'center'; c.textBaseline = 'bottom';
+      for (let m = 0; m * perM <= cols; m += stepM) c.fillText(m + 'm', ox + m * perM * s, oy - 4);
+      c.textAlign = 'right'; c.textBaseline = 'middle';
+      for (let m = stepM; m * perM <= rows; m += stepM) c.fillText(m + 'm', ox - 4, oy + m * perM * s);
+    }
+
+    // テープの線
+    c.lineCap = 'round';
+    c.lineWidth = Math.max(opts.minLine, s * 0.16);
+    c.strokeStyle = TAPE.yellow;
+    c.beginPath();
+    for (const key in state.lines) {
+      const [x0, y0, x1, y1] = edgeCoords(key);
+      c.moveTo(ox + x0 * s, oy + y0 * s);
+      c.lineTo(ox + x1 * s, oy + y1 * s);
+    }
+    c.stroke();
+  }
+
+  function draw() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawScene(ctx, view.s, view.ox, view.oy, cssW, cssH, { minLine: 4, labelSize: 11 });
+    const s = view.s;
+
+    // 押した辺を一瞬光らせる
+    if (ui.flash && performance.now() < ui.flash.until) {
+      ctx.lineCap = 'round';
+      ctx.lineWidth = Math.max(10, s * 0.35);
+      ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+      ctx.beginPath();
+      for (const key of ui.flash.keys) {
+        const [x0, y0, x1, y1] = edgeCoords(key);
+        ctx.moveTo(view.ox + x0 * s, view.oy + y0 * s);
+        ctx.lineTo(view.ox + x1 * s, view.oy + y1 * s);
+      }
+      ctx.stroke();
+    }
+
+    // 直線モードの始点
+    if (ui.mode === 'straight' && ui.start) {
+      const X = view.ox + ui.start.x * s, Y = view.oy + ui.start.y * s;
+      // 引ける方向（縦・横）のガイド
+      ctx.save();
+      ctx.setLineDash([6, 6]);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(242,194,0,0.85)';
+      ctx.beginPath();
+      ctx.moveTo(view.ox, Y); ctx.lineTo(view.ox + state.cols * s, Y);
+      ctx.moveTo(X, view.oy); ctx.lineTo(X, view.oy + state.rows * s);
+      ctx.stroke();
+      ctx.restore();
+      // 始点の目印
+      ctx.beginPath(); ctx.arc(X, Y, 16, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(224,69,58,0.35)'; ctx.fill();
+      ctx.lineWidth = 3; ctx.strokeStyle = '#e0453a'; ctx.stroke();
+      ctx.beginPath(); ctx.arc(X, Y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = '#e0453a'; ctx.fill();
+    }
+  }
+
+  // ---------- タッチ操作 ----------
+  const pointers = new Map();
+  let gesture = null; // {type:'tap'|'pinch'|'ignore', ...}
+
+  function localPos(e) {
+    const r = cv.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+  function pinchInfo() {
+    const [a, b] = [...pointers.values()];
+    return { mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) || 1 };
+  }
+
+  cv.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    try { cv.setPointerCapture(e.pointerId); } catch (_) {}
+    pointers.set(e.pointerId, localPos(e));
+    if (pointers.size === 1) {
+      const p = localPos(e);
+      gesture = { type: 'tap', sx: p.x, sy: p.y };
+    } else if (pointers.size === 2) {
+      // 2本指になったら描画はキャンセルして移動・拡大
+      const pi = pinchInfo();
+      gesture = { type: 'pinch', d0: pi.d, s0: view.s, gx: (pi.mx - view.ox) / view.s, gy: (pi.my - view.oy) / view.s };
+    } else {
+      gesture = { type: 'ignore' };
+    }
+  });
+
+  cv.addEventListener('pointermove', e => {
+    if (!pointers.has(e.pointerId)) return;
+    const p = localPos(e);
+    pointers.set(e.pointerId, p);
+    if (!gesture) return;
+    if (gesture.type === 'tap') {
+      if (Math.hypot(p.x - gesture.sx, p.y - gesture.sy) > TAP_SLOP) gesture = { type: 'ignore' };
+    } else if (gesture.type === 'pinch' && pointers.size === 2) {
+      const pi = pinchInfo();
+      const s = Math.min(MAX_SCALE, Math.max(minScale(), gesture.s0 * pi.d / gesture.d0));
+      view.s = s;
+      view.ox = pi.mx - gesture.gx * s;
+      view.oy = pi.my - gesture.gy * s;
+      requestDraw();
+    }
+  });
+
+  function endPointer(e, cancelled) {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.delete(e.pointerId);
+    if (gesture && gesture.type === 'tap' && !cancelled && pointers.size === 0) {
+      if (ui.mode === 'line') tapLine(gesture.sx, gesture.sy);
+      else if (ui.mode === 'straight') tapStraight(gesture.sx, gesture.sy);
+    }
+    if (pointers.size === 0) gesture = null;
+    else if (gesture && gesture.type === 'pinch') gesture = { type: 'ignore' }; // 指を全部離すまで何もしない
+  }
+  cv.addEventListener('pointerup', e => endPointer(e, false));
+  cv.addEventListener('pointercancel', e => endPointer(e, true));
+
+  // パソコンで確認するとき用（ホイールで拡大）
+  cv.addEventListener('wheel', e => {
+    e.preventDefault();
+    const p = localPos(e);
+    const gx = (p.x - view.ox) / view.s, gy = (p.y - view.oy) / view.s;
+    view.s = Math.min(MAX_SCALE, Math.max(minScale(), view.s * Math.exp(-e.deltaY * 0.0015)));
+    view.ox = p.x - gx * view.s; view.oy = p.y - gy * view.s;
+    requestDraw();
+  }, { passive: false });
+
+  // iOS Safari のページ拡大を止める
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(t =>
+    document.addEventListener(t, e => e.preventDefault(), { passive: false }));
+  document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+
+  // ---------- 上部表示 ----------
+  const modeChip = document.getElementById('modeChip');
+  const modeHint = document.getElementById('modeHint');
+  const cancelStart = document.getElementById('cancelStart');
+  const legend = document.getElementById('legend');
+
+  function fmtM(cm) { return (cm / 100).toFixed(cm % 100 === 0 ? 0 : 1) + 'm'; }
+
+  function updateTop() {
+    if (ui.mode === 'line') {
+      modeChip.textContent = '線';
+      modeHint.textContent = 'マスの辺をタップで線を付ける／もう一度で消す';
+      modeHint.classList.remove('alert');
+      cancelStart.style.display = 'none';
+    } else {
+      modeChip.textContent = '直線';
+      if (ui.start) {
+        modeHint.textContent = '終点をタップ（点線の上、縦か横）';
+        modeHint.classList.add('alert');
+        cancelStart.style.display = 'block';
+      } else {
+        modeHint.textContent = '始点の交点をタップ';
+        modeHint.classList.remove('alert');
+        cancelStart.style.display = 'none';
+      }
+    }
+    const { cols, rows, cellCm } = state;
+    legend.innerHTML =
+      `<span class="lg-item"><span class="lg-swatch"></span>黄テープ</span>` +
+      `<span class="lg-item">1マス＝${cellCm}cm</span>` +
+      `<span class="lg-item">部屋 ${fmtM(cols * cellCm)} × ${fmtM(rows * cellCm)}</span>`;
+  }
+
+  function refreshButtons() {
+    document.getElementById('bLine').classList.toggle('on', ui.mode === 'line');
+    document.getElementById('bStraight').classList.toggle('on', ui.mode === 'straight');
+    document.getElementById('bUndo').disabled = !undoStack.length;
+    document.getElementById('bRedo').disabled = !redoStack.length;
+  }
+
+  let toastTimer = 0;
+  function toast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 1800);
+  }
+
+  // ---------- シート ----------
+  const veil = document.getElementById('veil');
+  function openSheet(id) {
+    closeSheets();
+    veil.classList.add('show');
+    document.getElementById(id).classList.add('show');
+  }
+  function closeSheets() {
+    veil.classList.remove('show');
+    document.querySelectorAll('.sheet').forEach(s => s.classList.remove('show'));
+  }
+  veil.addEventListener('click', closeSheets);
+  document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeSheets));
+
+  // ---------- ボタン ----------
+  document.getElementById('bLine').addEventListener('click', () => setMode('line'));
+  document.getElementById('bStraight').addEventListener('click', () => setMode('straight'));
+  document.getElementById('bUndo').addEventListener('click', undo);
+  document.getElementById('bRedo').addEventListener('click', redo);
+  document.getElementById('bFit').addEventListener('click', fitView);
+  document.getElementById('bMenu').addEventListener('click', () => openSheet('menuSheet'));
+  cancelStart.addEventListener('click', () => { ui.start = null; updateTop(); requestDraw(); });
+
+  // 設定
+  const $ = id => document.getElementById(id);
+  $('mSettings').addEventListener('click', () => {
+    $('inCols').value = state.cols;
+    $('inRows').value = state.rows;
+    $('inCell').value = state.cellCm;
+    $('inRoomW').value = +(state.cols * state.cellCm / 100).toFixed(2);
+    $('inRoomH').value = +(state.rows * state.cellCm / 100).toFixed(2);
+    openSheet('setSheet');
+  });
+  $('sCalc').addEventListener('click', () => {
+    const cell = parseFloat($('inCell').value);
+    const w = parseFloat($('inRoomW').value), h = parseFloat($('inRoomH').value);
+    if (!(cell > 0) || !(w > 0) || !(h > 0)) { toast('数字を入れてください'); return; }
+    $('inCols').value = Math.ceil(w * 100 / cell - 1e-9);
+    $('inRows').value = Math.ceil(h * 100 / cell - 1e-9);
+    toast('マス数を入れました。「決定」で反映');
+  });
+  $('sApply').addEventListener('click', () => {
+    const cols = parseInt($('inCols').value, 10);
+    const rows = parseInt($('inRows').value, 10);
+    const cell = parseFloat($('inCell').value);
+    if (!(cols >= 1 && cols <= 200 && rows >= 1 && rows <= 200)) { toast('マス数は1〜200にしてください'); return; }
+    if (!(cell >= 1 && cell <= 1000)) { toast('1マスは1〜1000cmにしてください'); return; }
+    const inside = k => {
+      const [t, x, y] = k.split(',').map((v, i) => i ? +v : v);
+      return t === 'h' ? (x < cols && y <= rows) : (x <= cols && y < rows);
+    };
+    const outKeys = Object.keys(state.lines).filter(k => !inside(k));
+    if (outKeys.length && !confirm(`マス目を小さくすると、はみ出す線 ${outKeys.length} 本が消えます。よろしいですか？`)) return;
+    const before = snapshot();
+    outKeys.forEach(k => delete state.lines[k]);
+    const sizeChanged = cols !== state.cols || rows !== state.rows;
+    state.cols = cols; state.rows = rows; state.cellCm = cell;
+    ui.start = null;
+    closeSheets();
+    commit(before);
+    updateTop();
+    if (sizeChanged) fitView();
+  });
+
+  // 全消去
+  $('mClear').addEventListener('click', () => {
+    closeSheets();
+    if (!Object.keys(state.lines).length) { toast('消す線がありません'); return; }
+    if (!confirm('すべての線を消します。よろしいですか？\n（「戻す」で元に戻せます）')) return;
+    const before = snapshot();
+    state.lines = {};
+    ui.start = null;
+    commit(before);
+    updateTop();
+    toast('全消去しました');
+  });
+
+  // ---------- PNG書き出し ----------
+  $('mExport').addEventListener('click', async () => {
+    closeSheets();
+    const { cols, rows, cellCm } = state;
+    const cellPx = Math.max(14, Math.min(60, Math.floor(1500 / Math.max(cols, rows * 0.75))));
+    const margin = 60, head = 70, foot = 90;
+    const W = Math.max(cols * cellPx + margin * 2, 900); // 凡例が切れない幅
+    const H = rows * cellPx + margin * 2 + head + foot;
+    const oc = document.createElement('canvas');
+    oc.width = W; oc.height = H;
+    const c = oc.getContext('2d');
+    drawScene(c, cellPx, (W - cols * cellPx) / 2, head + margin, W, H, { minLine: 5, labelSize: 18 });
+
+    // 見出し
+    c.fillStyle = '#1e2022'; c.fillRect(0, 0, W, head);
+    c.fillStyle = '#f1f1ef'; c.textAlign = 'left'; c.textBaseline = 'middle';
+    c.font = 'bold 28px sans-serif';
+    c.fillText('床レイアウト', 24, head / 2);
+    c.font = '20px sans-serif'; c.textAlign = 'right';
+    c.fillText(new Date().toLocaleDateString('ja-JP'), W - 24, head / 2);
+
+    // 凡例
+    const fy = H - foot;
+    c.fillStyle = '#1e2022'; c.fillRect(0, fy, W, foot);
+    c.textAlign = 'left'; c.textBaseline = 'middle';
+    let x = 24; const y = fy + foot / 2;
+    c.strokeStyle = TAPE.yellow; c.lineWidth = 8; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(x, y); c.lineTo(x + 50, y); c.stroke();
+    x += 64;
+    c.fillStyle = '#f1f1ef'; c.font = '22px sans-serif';
+    const items = ['黄テープ', `1マス＝${cellCm}cm`, `部屋 ${fmtM(cols * cellCm)} × ${fmtM(rows * cellCm)}`];
+    for (const t of items) { c.fillText(t, x, y); x += c.measureText(t).width + 36; }
+
+    const blob = await new Promise(r => oc.toBlob(r, 'image/png'));
+    if (!blob) { toast('画像を作れませんでした'); return; }
+    const d = new Date(), p2 = n => String(n).padStart(2, '0');
+    const name = `floor-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}.png`;
+    const file = new File([blob], name, { type: 'image/png' });
+    // スマホは共有シートから「画像を保存」で写真に入れる
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); return; }
+      catch (e) { if (e.name === 'AbortError') return; }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    toast('画像を保存しました');
+  });
+
+  // ---------- 起動 ----------
+  load();
+  updateTop();
+  refreshButtons();
+  window.addEventListener('resize', () => { resize(); });
+  resize();
+})();
+</script>
+</body>
+</html>

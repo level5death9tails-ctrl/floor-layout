@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#1e2022">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="床レイアウト">
 <title>床レイアウト</title>
 <style>
   :root {
@@ -18,6 +21,8 @@
     --floor-bg: #4a4d50;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  /* ボタンを続けて押してもページが拡大されないように */
+  html, body, button, input, select, .sheet { touch-action: manipulation; }
   html, body {
     margin: 0; height: 100%; overflow: hidden;
     background: var(--bar); color: var(--text);
@@ -69,14 +74,14 @@
 
   /* モードごとの選択肢 */
   #opts {
-    display: flex; gap: 6px; align-items: center; min-height: 58px;
-    padding: 6px 8px; overflow-x: auto; background: var(--bar2);
+    display: flex; gap: 4px; align-items: center; min-height: 58px;
+    padding: 6px 6px; overflow-x: auto; background: var(--bar2);
     border-top: 1px solid var(--bar-line); scrollbar-width: none;
   }
   #opts::-webkit-scrollbar { display: none; }
   .chip {
-    flex: none; min-height: 44px; min-width: 44px; padding: 0 12px;
-    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    flex: none; min-height: 44px; min-width: 44px; padding: 0 10px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 4px;
     border: 2px solid transparent; border-radius: 22px;
     background: #34383b; color: var(--text); font-size: 14px; font-family: inherit;
   }
@@ -232,6 +237,9 @@
   <button class="sbtn" id="mLabels">
     <svg viewBox="0 0 24 24"><path d="M3 8 H21"/><path d="M3 16 H6 M9 16 H12 M15 16 H18"/></svg>線の色の意味（凡例）
   </button>
+  <button class="sbtn" id="mFull">
+    <svg viewBox="0 0 24 24"><path d="M4 9 V4 H9"/><path d="M15 4 H20 V9"/><path d="M20 15 V20 H15"/><path d="M9 20 H4 V15"/><path d="M4 4 L9 9 M20 4 L15 9 M20 20 L15 15 M4 20 L9 15"/></svg><span id="mFullLabel">全画面表示</span>
+  </button>
   <button class="sbtn" id="mExport">
     <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M21 16 L15 11 L5 19"/></svg>画像で保存（PNG）
   </button>
@@ -299,6 +307,14 @@
     </div>
     <button class="sbtn plain danger" id="tfDelete" style="color:#ff7a70">この種類を削除</button>
   </div>
+</div>
+
+<div class="sheet" id="fullSheet">
+  <h2>全画面で使うには</h2>
+  <p class="note">iPhone の Safari はページから全画面にできません。ホーム画面に追加して、そこから開くと画面いっぱいで使えます。</p>
+  <p class="note">1. 画面下の共有ボタン（□に↑）を押す<br>2. 「ホーム画面に追加」を押す<br>3. 右上の「追加」を押す<br>4. ホーム画面にできた「床レイアウト」から開く</p>
+  <p class="note" style="color:#ffb3ad">注意：ホーム画面から開いたときのデータは、Safari で開いたときのデータとは別に保存されます。Safari で作った案は、ホーム画面の方には出てきません。</p>
+  <button class="sbtn plain" data-close>閉じる</button>
 </div>
 
 <div class="sheet" id="labelSheet">
@@ -1102,6 +1118,7 @@
   ['gesturestart', 'gesturechange', 'gestureend'].forEach(t =>
     document.addEventListener(t, e => e.preventDefault(), { passive: false }));
   document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+  document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
 
   // ---------- 凡例 ----------
   function fmtM(cm) { return (cm / 100).toFixed(cm % 100 === 0 ? 0 : 1) + 'm'; }
@@ -1178,7 +1195,7 @@
     const m = ui.mode;
     if (m === 'line' || m === 'straight') {
       for (const c of TAPE_KEYS) {
-        h += `<button class="chip${ui.lineC === c ? ' on' : ''}" style="padding:0 10px" data-act="lineC" data-v="${c}" aria-label="${PALETTE[c].name}"><span class="dot" style="background:${PALETTE[c].hex};width:22px;height:22px"></span></button>`;
+        h += `<button class="chip${ui.lineC === c ? ' on' : ''}" style="padding:0 8px" data-act="lineC" data-v="${c}" aria-label="${PALETTE[c].name}"><span class="dot" style="background:${PALETTE[c].hex};width:22px;height:22px"></span></button>`;
       }
       h += '<span class="sep"></span>';
       h += `<button class="chip${ui.lineD ? '' : ' on'}" data-act="lineD" data-v="0"><svg viewBox="0 0 24 24"><path d="M3 12 H21" stroke-width="3"/></svg>実線</button>`;
@@ -1440,6 +1457,33 @@
     closeSheets();
     commit(before);
   });
+
+  // 全画面表示（Android は Fullscreen API、iPhone はホーム画面に追加の案内）
+  const isStandalone = () => navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+  const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement;
+  function updateFullLabel() {
+    $('mFullLabel').textContent = fsEl() ? '全画面をやめる' : '全画面表示';
+    $('mFull').style.display = isStandalone() ? 'none' : ''; // ホーム画面から開いているときは不要
+  }
+  $('mFull').addEventListener('click', async () => {
+    const el = document.documentElement;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (fsEl()) {
+      closeSheets();
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      return;
+    }
+    if (req) {
+      closeSheets();
+      try { await req.call(el); return; } catch (e) { /* 失敗したら案内を出す */ }
+    }
+    openSheet('fullSheet');
+  });
+  ['fullscreenchange', 'webkitfullscreenchange'].forEach(t => document.addEventListener(t, () => {
+    updateFullLabel();
+    setTimeout(() => { resize(); fitView(); }, 150);
+  }));
+  updateFullLabel();
 
   $('mTeams').addEventListener('click', openTeams);
   $('mTypes').addEventListener('click', openTypes);

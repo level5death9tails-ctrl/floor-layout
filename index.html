@@ -31,7 +31,8 @@
     -webkit-touch-callout: none;
     overscroll-behavior: none;
   }
-  #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+  /* 画面の四辺に固定（全画面・ホーム画面起動でも実際の表示サイズに合わせて広がる） */
+  #app { position: fixed; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; }
 
   /* 上部：モード表示と凡例 */
   #top {
@@ -472,6 +473,7 @@
     view.ox = (cssW - state.cols * view.s) / 2;
     view.oy = (cssH - state.rows * view.s) / 2;
     view.fitted = true;
+    view.auto = true; // 指で拡大・移動するまでは、画面サイズが変わったら合わせ直す
     requestDraw();
   }
   function minScale() { return Math.min(cssW / state.cols, cssH / state.rows) * 0.4; }
@@ -702,10 +704,11 @@
   function resize() {
     const r = cv.getBoundingClientRect();
     dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const changed = r.width !== cssW || r.height !== cssH;
     cssW = r.width; cssH = r.height;
     cv.width = Math.round(cssW * dpr);
     cv.height = Math.round(cssH * dpr);
-    if (!view.fitted) fitView();
+    if (!view.fitted || (changed && view.auto)) fitView();
     requestDraw();
   }
 
@@ -1076,6 +1079,7 @@
       const pi = pinchInfo();
       const s = Math.min(MAX_SCALE, Math.max(minScale(), gesture.s0 * pi.d / gesture.d0));
       view.s = s;
+      view.auto = false;
       view.ox = pi.mx - gesture.gx * s;
       view.oy = pi.my - gesture.gy * s;
       requestDraw();
@@ -1111,6 +1115,7 @@
     const gx = (p.x - view.ox) / view.s, gy = (p.y - view.oy) / view.s;
     view.s = Math.min(MAX_SCALE, Math.max(minScale(), view.s * Math.exp(-e.deltaY * 0.0015)));
     view.ox = p.x - gx * view.s; view.oy = p.y - gy * view.s;
+    view.auto = false;
     requestDraw();
   }, { passive: false });
 
@@ -1587,6 +1592,8 @@
   load();
   refreshAll();
   window.addEventListener('resize', () => { resize(); });
+  // 描画エリアの大きさが変わったら（全画面の切り替えなど）描き直す
+  if (window.ResizeObserver) new ResizeObserver(() => resize()).observe(document.getElementById('stage'));
   resize();
 })();
 </script>

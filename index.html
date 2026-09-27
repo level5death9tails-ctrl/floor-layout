@@ -226,6 +226,12 @@
 
 <div class="sheet" id="menuSheet">
   <h2>メニュー</h2>
+  <button class="sbtn" id="mPlans">
+    <svg viewBox="0 0 24 24"><rect x="7" y="3" width="13" height="15" rx="1"/><path d="M4 7 V21 H16"/></svg>案の管理（切り替え・複製）<span class="meta" id="mPlanName"></span>
+  </button>
+  <button class="sbtn" id="mTape">
+    <svg viewBox="0 0 24 24"><circle cx="10" cy="11" r="7"/><circle cx="10" cy="11" r="2.5"/><path d="M17 11 V18 H22"/></svg>テープの長さ
+  </button>
   <button class="sbtn" id="mSettings">
     <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9 H21 M3 15 H21 M9 3 V21 M15 3 V21"/></svg>マス目の設定
   </button>
@@ -243,6 +249,9 @@
   </button>
   <button class="sbtn" id="mExport">
     <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M21 16 L15 11 L5 19"/></svg>画像で保存（PNG）
+  </button>
+  <button class="sbtn" id="mBackup">
+    <svg viewBox="0 0 24 24"><path d="M12 3 V15"/><path d="M7 10 L12 15 L17 10"/><path d="M4 17 V21 H20 V17"/></svg>バックアップ（書き出し・読み込み）
   </button>
   <button class="sbtn danger" id="mClear">
     <svg viewBox="0 0 24 24"><path d="M4 7 H20"/><path d="M9 7 V4 H15 V7"/><path d="M6 7 L7 20 H17 L18 7"/></svg>全消去
@@ -308,6 +317,47 @@
     </div>
     <button class="sbtn plain danger" id="tfDelete" style="color:#ff7a70">この種類を削除</button>
   </div>
+</div>
+
+<div class="sheet" id="planSheet">
+  <h2>案の管理</h2>
+  <p class="note">押した案に切り替わります。どの案も変更のたびに自動で保存されます。</p>
+  <div id="planList"></div>
+  <div class="row2">
+    <button class="sbtn plain" id="planNew">＋ 新しい案</button>
+    <button class="sbtn plain" id="planDup">今の案を複製</button>
+  </div>
+  <div class="row2">
+    <button class="sbtn plain" id="planRename">名前を変更</button>
+    <button class="sbtn plain" id="planDel" style="color:#ff7a70">今の案を削除</button>
+  </div>
+  <button class="sbtn plain" data-close>閉じる</button>
+</div>
+
+<div class="sheet" id="tapeSheet">
+  <h2>テープの長さ</h2>
+  <div id="tapeList"></div>
+  <p class="note">線の総延長です。破線は線の長さで、実際に貼るテープはその約6割です（0.3マス貼って0.2マス空ける）。余裕を見て多めに用意してください。</p>
+  <button class="sbtn plain" data-close>閉じる</button>
+</div>
+
+<div class="sheet" id="backupSheet">
+  <h2>バックアップ</h2>
+  <p class="note">すべての案を文字（JSON）にして書き出します。機種変更のときや、Safari とホーム画面のあいだでデータを移すときに使います。</p>
+  <div class="row2">
+    <button class="sbtn plain" id="bkCopy">文字をコピー</button>
+    <button class="sbtn plain" id="bkFile">ファイルで保存</button>
+  </div>
+  <div class="group">
+    <p class="note">読み込んだ案は今ある案に「追加」されます（上書きはしません）。書き出した文字を下に貼り付けて「読み込む」を押すか、保存したファイルを選んでください。</p>
+    <textarea id="bkText" rows="4" placeholder="ここに貼り付け" style="width:100%;border-radius:8px;border:1px solid #4a4e51;background:#1b1d1f;color:var(--text);font-size:16px;padding:8px;margin-bottom:8px;-webkit-user-select:text;user-select:text"></textarea>
+    <div class="row2">
+      <button class="sbtn primary" id="bkImport">読み込む</button>
+      <button class="sbtn plain" id="bkPick">ファイルを選ぶ</button>
+    </div>
+    <input type="file" id="bkInput" accept=".json,application/json,text/plain" style="display:none">
+  </div>
+  <button class="sbtn plain" data-close>閉じる</button>
 </div>
 
 <div class="sheet" id="fullSheet">
@@ -415,16 +465,54 @@
   const typeOf = id => state.types.find(t => t.id === id);
   const itemOf = id => state.items.find(i => i.id === id);
 
-  // ---------- 保存 ----------
+  // ---------- 保存（複数の案） ----------
+  // book = { cur: 今の案id, order: [id...], plans: { id: {name, updated, data} } }
+  const BOOK_KEY = 'floorLayout.v2';
+  let book = null;
+  function newBook(data, name) {
+    const id = uid();
+    return { cur: id, order: [id], plans: { [id]: { name, updated: Date.now(), data } } };
+  }
   function load() {
     try {
-      const raw = localStorage.getItem(STORE_KEY);
-      if (raw) state = normalize(JSON.parse(raw));
+      const raw = localStorage.getItem(BOOK_KEY);
+      if (raw) {
+        const b = JSON.parse(raw);
+        if (b && b.plans && b.plans[b.cur]) { book = b; state = normalize(b.plans[b.cur].data); return; }
+      }
+      // 以前の保存形式（案が1つだけ）から引き継ぐ。古いデータは念のため残しておく
+      const old = localStorage.getItem(STORE_KEY);
+      if (old) state = normalize(JSON.parse(old));
     } catch (e) { /* 読めなければ初期値 */ }
+    book = newBook(state, '案1');
   }
   function save() {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+    const p = book.plans[book.cur];
+    p.data = state; p.updated = Date.now();
+    try { localStorage.setItem(BOOK_KEY, JSON.stringify(book)); }
     catch (e) { toast('保存できませんでした'); }
+  }
+  const curPlan = () => book.plans[book.cur];
+  function switchPlan(id) {
+    save();
+    book.cur = id;
+    state = normalize(book.plans[id].data);
+    undoStack.length = 0; redoStack.length = 0;
+    ui.start = null; ui.sel = null;
+    save();
+    refreshAll();
+    fitView();
+  }
+  function addPlan(name, data) {
+    const id = uid();
+    book.plans[id] = { name, updated: Date.now(), data };
+    book.order.push(id);
+    return id;
+  }
+  function uniqueName(base) {
+    const names = new Set(book.order.map(id => book.plans[id].name));
+    if (!names.has(base)) return base;
+    for (let i = 2; ; i++) if (!names.has(`${base}（${i}）`)) return `${base}（${i}）`;
   }
 
   // ---------- 履歴 ----------
@@ -1130,14 +1218,28 @@
   const esc = s => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
   function lineLabel(c) { return (state.lineLabels[c] || '').trim() || `${PALETTE[c].name}テープ`; }
+  const fmtLen = cm => (cm / 100).toFixed(1) + 'm';
+  const DASH_RATIO = 0.6; // 破線は 0.3 貼って 0.2 空ける
+
+  // 色・実線/破線ごとの線の長さ（cm）
+  function tapeTotals() {
+    const t = {};
+    for (const c of TAPE_KEYS) t[c] = { solid: 0, dash: 0 };
+    for (const k in state.lines) {
+      const L = state.lines[k];
+      const e = t[L.c || 'yellow'];
+      if (e) e[L.d ? 'dash' : 'solid'] += state.cellCm;
+    }
+    return t;
+  }
 
   // 使っているものだけを並べる（画面と画像で共通）
   function legendEntries() {
     const out = [];
-    const combos = new Set();
-    for (const k in state.lines) { const L = state.lines[k]; combos.add((L.c || 'yellow') + (L.d ? ':d' : '')); }
-    for (const c of TAPE_KEYS) for (const d of ['', ':d']) {
-      if (combos.has(c + d)) out.push({ kind: 'line', c, d: !!d, text: lineLabel(c) + (d ? '（破線）' : '') });
+    const tt = tapeTotals();
+    for (const c of TAPE_KEYS) {
+      if (tt[c].solid) out.push({ kind: 'line', c, d: false, text: `${lineLabel(c)} ${fmtLen(tt[c].solid)}` });
+      if (tt[c].dash) out.push({ kind: 'line', c, d: true, text: `${lineLabel(c)}（破線） ${fmtLen(tt[c].dash)}` });
     }
     const usedTeams = new Set(Object.values(state.cells));
     for (const t of state.teams) if (usedTeams.has(t.id)) out.push({ kind: 'team', c: t.c, text: t.name });
@@ -1154,7 +1256,7 @@
 
   const legend = document.getElementById('legend');
   function renderLegend() {
-    let h = '';
+    let h = `<span class="lg-item" style="color:var(--text);font-weight:700">${esc(curPlan().name)}</span>`;
     for (const e of legendEntries()) {
       let icon;
       if (e.kind === 'line') icon = `<span class="lg-line" style="border-top-color:${PALETTE[e.c].hex};border-top-style:${e.d ? 'dashed' : 'solid'}"></span>`;
@@ -1274,7 +1376,10 @@
   document.getElementById('bUndo').addEventListener('click', undo);
   document.getElementById('bRedo').addEventListener('click', redo);
   document.getElementById('bFit').addEventListener('click', fitView);
-  document.getElementById('bMenu').addEventListener('click', () => openSheet('menuSheet'));
+  document.getElementById('bMenu').addEventListener('click', () => {
+    document.getElementById('mPlanName').textContent = curPlan().name;
+    openSheet('menuSheet');
+  });
   cancelStart.addEventListener('click', () => { ui.start = null; updateTop(); requestDraw(); });
 
   // 設定
@@ -1490,6 +1595,152 @@
   }));
   updateFullLabel();
 
+  // 案の管理
+  function renderPlans() {
+    const fmtD = t => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
+    $('planList').innerHTML = book.order.map(id => {
+      const p = book.plans[id], on = id === book.cur;
+      return `<button class="sbtn" data-id="${id}" style="${on ? 'border:2px solid var(--accent)' : ''}">
+        ${on ? '<span style="color:var(--accent);font-weight:700">●</span>' : '<span style="width:12px"></span>'}
+        ${esc(p.name)}<span class="meta">${on ? '表示中・' : ''}${fmtD(p.updated)}</span></button>`;
+    }).join('');
+  }
+  function askName(msg, def) {
+    const v = prompt(msg, def);
+    if (v == null) return null;
+    const n = v.trim().slice(0, 20);
+    if (!n) { toast('名前を入れてください'); return null; }
+    return n;
+  }
+  $('mPlans').addEventListener('click', () => { renderPlans(); openSheet('planSheet'); });
+  $('planList').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.id !== book.cur) { switchPlan(b.dataset.id); toast(`「${curPlan().name}」に切り替えました`); }
+    closeSheets();
+  });
+  $('planNew').addEventListener('click', () => {
+    const name = askName('新しい案の名前', uniqueName(`案${book.order.length + 1}`));
+    if (!name) return;
+    // マス目・班・物の種類は今の案と同じにして、線・塗り・物は空にする
+    const d = JSON.parse(snapshot());
+    d.lines = {}; d.cells = {}; d.items = [];
+    switchPlan(addPlan(uniqueName(name), d));
+    closeSheets();
+    toast(`「${curPlan().name}」を作りました`);
+  });
+  $('planDup').addEventListener('click', () => {
+    const name = askName('複製した案の名前', uniqueName(`${curPlan().name}のコピー`));
+    if (!name) return;
+    switchPlan(addPlan(uniqueName(name), JSON.parse(snapshot())));
+    closeSheets();
+    toast(`「${curPlan().name}」を作りました`);
+  });
+  $('planRename').addEventListener('click', () => {
+    const name = askName('案の名前', curPlan().name);
+    if (!name) return;
+    curPlan().name = name;
+    save(); renderPlans(); updateTop();
+  });
+  $('planDel').addEventListener('click', () => {
+    if (book.order.length <= 1) { toast('案が1つだけのときは削除できません'); return; }
+    if (!confirm(`「${curPlan().name}」を削除します。元に戻せません。よろしいですか？`)) return;
+    const id = book.cur;
+    book.order = book.order.filter(x => x !== id);
+    delete book.plans[id];
+    book.cur = book.order[0];
+    state = normalize(book.plans[book.cur].data);
+    undoStack.length = 0; redoStack.length = 0;
+    ui.start = null; ui.sel = null;
+    save(); refreshAll(); fitView();
+    renderPlans();
+    toast(`「${curPlan().name}」に切り替えました`);
+  });
+
+  // テープの長さ
+  $('mTape').addEventListener('click', () => {
+    const tt = tapeTotals();
+    let sum = 0;
+    const rows = TAPE_KEYS.filter(c => tt[c].solid || tt[c].dash).map(c => {
+      const t = tt[c], real = t.solid + t.dash * DASH_RATIO;
+      sum += t.solid + t.dash;
+      let detail = [];
+      if (t.solid) detail.push(`実線 ${fmtLen(t.solid)}`);
+      if (t.dash) detail.push(`破線 ${fmtLen(t.dash)}（貼るのは約${fmtLen(t.dash * DASH_RATIO)}）`);
+      return `<div class="card">
+        <div class="top"><span class="dot" style="background:${PALETTE[c].hex};width:24px;height:24px"></span>
+          <b style="flex:1">${esc(lineLabel(c))}</b><b style="font-size:18px">約${fmtLen(real)}</b></div>
+        <div class="note" style="margin:0">${detail.join('／')}</div></div>`;
+    });
+    $('tapeList').innerHTML = rows.length ? rows.join('') +
+      `<p class="note">線の総延長（全色）：${fmtLen(sum)}</p>` : '<p class="note">まだ線がありません。</p>';
+    openSheet('tapeSheet');
+  });
+
+  // バックアップ
+  function backupText() {
+    save();
+    return JSON.stringify({
+      app: 'floor-layout', version: 2, exported: new Date().toISOString(),
+      plans: book.order.map(id => ({ name: book.plans[id].name, data: book.plans[id].data })),
+    });
+  }
+  $('mBackup').addEventListener('click', () => { $('bkText').value = ''; openSheet('backupSheet'); });
+  $('bkCopy').addEventListener('click', async () => {
+    const text = backupText();
+    try { await navigator.clipboard.writeText(text); toast('コピーしました'); return; }
+    catch (e) { /* 使えない環境では選択してコピー */ }
+    const ta = $('bkText');
+    ta.value = text; ta.focus(); ta.select();
+    try { document.execCommand('copy'); toast('コピーしました'); }
+    catch (e) { toast('文字を選択しました。長押しでコピーしてください'); }
+  });
+  $('bkFile').addEventListener('click', async () => {
+    const d = new Date(), p2 = n => String(n).padStart(2, '0');
+    const name = `floor-layout-backup-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}.json`;
+    const blob = new Blob([backupText()], { type: 'application/json' });
+    const file = new File([blob], name, { type: 'application/json' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); return; }
+      catch (e) { if (e.name === 'AbortError') return; }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    toast('ファイルを保存しました');
+  });
+  function importText(text) {
+    let obj;
+    try { obj = JSON.parse(text); } catch (e) { toast('読み込めませんでした（文字が正しくありません）'); return; }
+    // バックアップ形式のほか、案1つ分のデータにも対応
+    let list = [];
+    if (obj && Array.isArray(obj.plans)) list = obj.plans;
+    else if (obj && obj.cols > 0) list = [{ name: '読み込んだ案', data: obj }];
+    list = list.filter(p => p && p.data && p.data.cols > 0 && p.data.rows > 0 && p.data.cellCm > 0);
+    if (!list.length) { toast('読み込める案がありませんでした'); return; }
+    let first = null;
+    for (const p of list) {
+      const id = addPlan(uniqueName(String(p.name || '読み込んだ案').slice(0, 20)), normalize(p.data));
+      if (!first) first = id;
+    }
+    switchPlan(first);
+    closeSheets();
+    toast(`${list.length}件の案を読み込みました`);
+  }
+  $('bkImport').addEventListener('click', () => {
+    const t = $('bkText').value.trim();
+    if (!t) { toast('文字を貼り付けてください'); return; }
+    importText(t);
+  });
+  $('bkPick').addEventListener('click', () => $('bkInput').click());
+  $('bkInput').addEventListener('change', async e => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (f) importText(await f.text());
+  });
+
   $('mTeams').addEventListener('click', openTeams);
   $('mTypes').addEventListener('click', openTypes);
   $('mLabels').addEventListener('click', openLabels);
@@ -1559,7 +1810,7 @@
     c.fillStyle = '#1e2022'; c.fillRect(0, 0, W, head);
     c.fillStyle = '#f1f1ef'; c.textAlign = 'left'; c.textBaseline = 'middle';
     c.font = 'bold 28px sans-serif';
-    c.fillText('床レイアウト', 24, head / 2);
+    c.fillText(`床レイアウト　${curPlan().name}`, 24, head / 2);
     c.font = '20px sans-serif'; c.textAlign = 'right';
     c.fillText(new Date().toLocaleDateString('ja-JP'), W - 24, head / 2);
 
@@ -1590,6 +1841,7 @@
 
   // ---------- 起動 ----------
   load();
+  save();
   refreshAll();
   window.addEventListener('resize', () => { resize(); });
   // 描画エリアの大きさが変わったら（全画面の切り替えなど）描き直す
